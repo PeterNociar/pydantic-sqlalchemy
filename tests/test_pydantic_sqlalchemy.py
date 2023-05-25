@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from typing import List
 
+from pydantic import BaseModel
+
 from pydantic_sqlalchemy import sqlalchemy_to_pydantic
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, create_engine
 from sqlalchemy.ext.declarative import declarative_base
@@ -14,6 +16,17 @@ engine = create_engine("sqlite://", echo=True)
 
 def utc_now() -> datetime:
     return datetime.now(tz=timezone.utc)
+
+
+class CustomBaseModel(BaseModel):
+    @classmethod
+    def custom_schema(cls):
+        return cls.schema()
+
+    class Config:
+        orm_mode = True
+        getter_dict = dict
+        allow_population_by_field_name = True
 
 
 class User(Base):
@@ -41,7 +54,6 @@ class Address(Base):
 
 
 Base.metadata.create_all(engine)
-
 
 LocalSession = sessionmaker(bind=engine)
 
@@ -184,4 +196,41 @@ def test_exclude() -> None:
             {"email_address": "ed@example.com", "id": 1},
             {"email_address": "eddy@example.com", "id": 2},
         ],
+    }
+
+
+def test_custom_model_name() -> None:
+    custom_model_name = "CustomUserModel"
+    PydanticUser = sqlalchemy_to_pydantic(User, model_name=custom_model_name)
+
+    assert PydanticUser.schema() == {
+        'title': 'CustomUserModel', 'type': 'object',
+        'properties': {
+            'id': {'title': 'Id', 'type': 'integer'},
+            'name': {'title': 'Name', 'type': 'string'},
+            'fullname': {'title': 'Fullname', 'type': 'string'},
+            'nickname': {'title': 'Nickname', 'type': 'string'},
+            'created': {'title': 'Created', 'type': 'string', 'format': 'date-time'},
+            'updated': {'title': 'Updated', 'type': 'string', 'format': 'date-time'}},
+        'required': ['id'],
+    }
+    assert PydanticUser.__name__ == custom_model_name
+
+
+def test_custom_base_model() -> None:
+    pydantic_user = sqlalchemy_to_pydantic(User, base_model=CustomBaseModel)
+
+    assert issubclass(pydantic_user, CustomBaseModel)
+    assert pydantic_user.Config == CustomBaseModel.Config
+    assert pydantic_user.custom_schema() == {
+        'title': 'User',
+        'type': 'object',
+        'properties': {
+            'id': {'title': 'Id', 'type': 'integer'},
+            'name': {'title': 'Name', 'type': 'string'},
+            'fullname': {'title': 'Fullname', 'type': 'string'},
+            'nickname': {'title': 'Nickname', 'type': 'string'},
+            'created': {'title': 'Created', 'type': 'string', 'format': 'date-time'},
+            'updated': {'title': 'Updated', 'type': 'string', 'format': 'date-time'}},
+        'required': ['id'],
     }
